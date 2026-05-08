@@ -39,7 +39,6 @@ import {
 import { toast } from "sonner";
 import { logError } from "@/lib/errorLogger";
 import { seminarApplicationSchema, validateInput } from "@/lib/validation";
-import LoginRequiredDialog from "@/components/LoginRequiredDialog";
 import SurveyFormRenderer from "@/components/SurveyFormRenderer";
 
 interface Seminar {
@@ -88,9 +87,9 @@ const SeminarDetailPage = () => {
   const [hasApplied, setHasApplied] = useState(false);
   const [myApplication, setMyApplication] = useState<any>(null);
   const [isLiked, setIsLiked] = useState(false);
-  const [showLoginDialog, setShowLoginDialog] = useState(false);
   const [showCompletionDialog, setShowCompletionDialog] = useState(false);
   const [completionMessage, setCompletionMessage] = useState("");
+  const [isPhoneAutoFilled, setIsPhoneAutoFilled] = useState(false);
 
   // Form state
   const [parentName, setParentName] = useState("");
@@ -101,10 +100,25 @@ const SeminarDetailPage = () => {
   const surveyFormRef = useRef<{ triggerSubmit: () => void; isValid: () => boolean; getAnswers: () => Record<string, SurveyAnswer> } | null>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setUser(session?.user ?? null);
       if (session?.user && id) {
         checkExistingApplication(session.user.id);
+      }
+
+      if (session?.user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("phone")
+          .eq("id", session.user.id)
+          .maybeSingle();
+
+        // 로그인 사용자는 프로필 전화번호를 기본값으로 사용
+        const phoneFromProfile = profile?.phone?.trim() || session.user.phone?.trim() || "";
+        if (phoneFromProfile) {
+          setParentPhone(phoneFromProfile);
+          setIsPhoneAutoFilled(true);
+        }
       }
     });
 
@@ -185,11 +199,6 @@ const SeminarDetailPage = () => {
   };
 
   const handleApply = async () => {
-    if (!user) {
-      setShowLoginDialog(true);
-      return;
-    }
-
     // Collect survey answers
     const surveyFieldsList: SurveyField[] = (seminar as any).survey_fields || [];
     let surveyAnswers: Record<string, SurveyAnswer> = {};
@@ -225,7 +234,7 @@ const SeminarDetailPage = () => {
 
       const { error } = await supabase.from("seminar_applications").insert({
         seminar_id: id,
-        user_id: user.id,
+        user_id: user?.id ?? null,
         student_name: parentName.trim(),
         attendee_count: pCount + sCount,
         status: applicationStatus,
@@ -236,15 +245,17 @@ const SeminarDetailPage = () => {
 
       if (error) throw error;
 
-      // 쏘다 알림톡 발송 (fire-and-forget)
-      supabase.functions.invoke('notify-seminar-event', {
-        body: {
-          eventType: 'seminar_application',
-          seminarId: id,
-          applicantUserId: user.id,
-          applicantName: parentName.trim(),
-        },
-      }).catch(() => {});
+      // 쏘다 알림톡 발송 (fire-and-forget, 로그인 시에만 Edge Function JWT 검증 통과)
+      if (user?.id) {
+        supabase.functions.invoke('notify-seminar-event', {
+          body: {
+            eventType: 'seminar_application',
+            seminarId: id,
+            applicantUserId: user.id,
+            applicantName: parentName.trim(),
+          },
+        }).catch(() => {});
+      }
 
       setIsDialogOpen(false);
       setHasApplied(true);
@@ -628,13 +639,7 @@ const SeminarDetailPage = () => {
               className="w-full h-14 text-base font-semibold"
               size="xl"
               disabled={seminar.status === "closed" || remainingSpots <= 0}
-              onClick={() => {
-                if (!user) {
-                  setShowLoginDialog(true);
-                  return;
-                }
-                setIsDialogOpen(true);
-              }}
+              onClick={() => setIsDialogOpen(true)}
             >
               {seminar.status === "closed" || remainingSpots <= 0
                 ? "모집 마감"
@@ -650,7 +655,7 @@ const SeminarDetailPage = () => {
           <DialogHeader>
             <DialogTitle className="text-lg">설명회 참가 신청</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-4 overflow-y-auto flex-1 min-h-0 pr-1">
+          <div className="space-y-4 py-4 overflow-y-auto overflow-x-visible flex-1 min-h-0 px-1">
             {/* Default fields: parent name, phone, attendee counts */}
             <div className="space-y-3">
               <div className="space-y-1">
@@ -667,10 +672,26 @@ const SeminarDetailPage = () => {
                 <Input
                   placeholder="전화번호를 입력하세요"
                   value={parentPhone}
-                  onChange={(e) => setParentPhone(e.target.value)}
+                  onChange={(e) => {
+                    setParentPhone(e.target.value);
+                    if (isPhoneAutoFilled) setIsPhoneAutoFilled(false);
+                  }}
                   maxLength={20}
                   type="tel"
+                  readOnly={isPhoneAutoFilled}
                 />
+                {isPhoneAutoFilled && (
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs text-muted-foreground">로그인된 계정의 전화번호가 자동 입력되었습니다.</p>
+                    <button
+                      type="button"
+                      className="text-xs text-primary underline underline-offset-2"
+                      onClick={() => setIsPhoneAutoFilled(false)}
+                    >
+                      직접 입력
+                    </button>
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
@@ -746,8 +767,6 @@ const SeminarDetailPage = () => {
           </div>
         </DialogContent>
       </Dialog>
-      <LoginRequiredDialog open={showLoginDialog} onOpenChange={setShowLoginDialog} redirectTo={location.pathname} />
-
       {/* Completion Message Dialog */}
       <Dialog open={showCompletionDialog} onOpenChange={setShowCompletionDialog}>
         <DialogContent className="max-w-sm mx-auto">
