@@ -200,8 +200,8 @@ const AdminHomePage = () => {
     },
     {
       icon: CalendarDays,
-      label: "설명회 관리",
-      path: "/admin/seminars"
+      label: "설명회 · 쿠폰",
+      path: "/admin/sessions"
     },
     {
       icon: MessageSquare,
@@ -305,7 +305,7 @@ const AdminHomePage = () => {
               {upcomingSeminar && (
                 <Card 
                   className="shadow-card border-green-200 bg-green-50 cursor-pointer hover:shadow-soft transition-all"
-                  onClick={() => navigate("/admin/seminars")}
+                  onClick={() => navigate("/admin/sessions")}
                 >
                   <CardContent className="p-4 text-center">
                     <Users className="w-5 h-5 text-green-600 mx-auto mb-2" />

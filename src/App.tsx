@@ -33,6 +33,13 @@ import PreferenceTest from "./pages/PreferenceTest";
 import PreferenceResult from "./pages/PreferenceResult";
 import TimetablePage from "./pages/TimetablePage";
 import EventsPage from "./pages/EventsPage";
+import ParentQrScannerPage from "./pages/parent/ParentQrScannerPage";
+import ParentCheckInVerifyPage from "./pages/parent/ParentCheckInVerifyPage";
+import ParentCheckInCompletePage from "./pages/parent/ParentCheckInCompletePage";
+import ParentCouponsPage from "./pages/parent/ParentCouponsPage";
+import ParentCouponDetailPage from "./pages/parent/ParentCouponDetailPage";
+import ParentCouponUseCodePage from "./pages/parent/ParentCouponUseCodePage";
+import ParentCouponUsedPage from "./pages/parent/ParentCouponUsedPage";
 import AdminHomePage from "./pages/admin/AdminHomePage";
 import ConsultationManagementPage from "./pages/admin/ConsultationManagementPage";
 import ReservationManagementPage from "./pages/admin/ReservationManagementPage";
@@ -62,6 +69,12 @@ import ChatManagementPage from "./pages/admin/ChatManagementPage";
 import AcademySetupPage from "./pages/academy/AcademySetupPage";
 import AcademyOnboardingPage from "./pages/academy/AcademyOnboardingPage";
 import AcademyDashboardPage from "./pages/academy/AcademyDashboardPage";
+import AcademySessionListPage from "./pages/academy/AcademySessionListPage";
+import AcademySessionCreatePage from "./pages/academy/AcademySessionCreatePage";
+import AcademySessionEditPage from "./pages/academy/AcademySessionEditPage";
+import AcademySessionDetailPage from "./pages/academy/AcademySessionDetailPage";
+import AcademySessionRedeemPage from "./pages/academy/AcademySessionRedeemPage";
+import AcademySessionReportPage from "./pages/academy/AcademySessionReportPage";
 import ProtectedAdminRoute from "./components/ProtectedAdminRoute";
 import ProtectedSuperAdminRoute from "./components/ProtectedSuperAdminRoute";
 import NotFound from "./pages/NotFound";
@@ -142,6 +155,13 @@ const App = () => {
               <Route path="/p/timetable" element={<TimetablePage />} />
               <Route path="/p/events" element={<EventsPage />} />
               <Route path="/p/announcements" element={<AnnouncementsPage />} />
+              <Route path="/p/check-in" element={<ParentQrScannerPage />} />
+              <Route path="/p/check-in/:sessionId/verify" element={<ParentCheckInVerifyPage />} />
+              <Route path="/p/check-in/:sessionId/complete" element={<ParentCheckInCompletePage />} />
+              <Route path="/p/coupons" element={<ParentCouponsPage />} />
+              <Route path="/p/coupons/:couponId" element={<ParentCouponDetailPage />} />
+              <Route path="/p/coupons/:couponId/use" element={<ParentCouponUseCodePage />} />
+              <Route path="/p/coupons/:couponId/complete" element={<ParentCouponUsedPage />} />
               
               {/* Student Routes (/s prefix) */}
               <Route path="/s/home" element={<StudentHomePage />} />
@@ -184,6 +204,12 @@ const App = () => {
               <Route path="/admin/reservations" element={<ProtectedAdminRoute><ReservationManagementPage /></ProtectedAdminRoute>} />
               <Route path="/admin/profile" element={<ProtectedAdminRoute><ProfileManagementPage /></ProtectedAdminRoute>} />
               <Route path="/admin/profileread" element={<ProtectedAdminRoute><ProfileReadOnlyPage /></ProtectedAdminRoute>} />
+              <Route path="/admin/sessions" element={<ProtectedAdminRoute><AcademySessionListPage /></ProtectedAdminRoute>} />
+              <Route path="/admin/sessions/create" element={<ProtectedAdminRoute><AcademySessionCreatePage /></ProtectedAdminRoute>} />
+              <Route path="/admin/sessions/:sessionId/edit" element={<ProtectedAdminRoute><AcademySessionEditPage /></ProtectedAdminRoute>} />
+              <Route path="/admin/sessions/:sessionId" element={<ProtectedAdminRoute><AcademySessionDetailPage /></ProtectedAdminRoute>} />
+              <Route path="/admin/sessions/:sessionId/redeem" element={<ProtectedAdminRoute><AcademySessionRedeemPage /></ProtectedAdminRoute>} />
+              <Route path="/admin/sessions/:sessionId/report" element={<ProtectedAdminRoute><AcademySessionReportPage /></ProtectedAdminRoute>} />
               <Route path="/admin/seminars" element={<ProtectedAdminRoute><SeminarManagementPage /></ProtectedAdminRoute>} />
               <Route path="/admin/seminars/:seminarId/applicants" element={<ProtectedAdminRoute><SeminarApplicantsPage /></ProtectedAdminRoute>} />
               <Route path="/admin/posts" element={<ProtectedAdminRoute><PostManagementPage /></ProtectedAdminRoute>} />
