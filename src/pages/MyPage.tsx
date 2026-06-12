@@ -17,7 +17,8 @@ import {
   FileText,
   Sparkles,
   User,
-  UserX
+  UserX,
+  Ticket
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -219,6 +220,13 @@ const MyPage = () => {
                 label="찜한 학원" 
                 onClick={() => navigate("/p/my/bookmarks")} 
               />
+              {userRole === "parent" && (
+                <MenuItemButton
+                  icon={Ticket}
+                  label="쿠폰함"
+                  onClick={() => navigate("/p/coupons")}
+                />
+              )}
             </>
           )}
         </div>
