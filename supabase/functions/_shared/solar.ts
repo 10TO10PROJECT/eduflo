@@ -53,12 +53,12 @@ export interface SolarMessage {
 
 // ─── Constants ───────────────────────────────────────────────────
 
-const SOLAR_API_URL = "https://api.upstage.ai/v1/solar/chat/completions";
-export const SOLAR_MODEL = "solar-1-mini-chat";
+const SOLAR_API_URL = "https://api.upstage.ai/v1/chat/completions";
+export const SOLAR_MODEL = "solar-mini";
 
-// 계획 문서 기준 임시 단가. 배포 전 Upstage 실제 pricing으로 재확인 필요.
-const KRW_PER_1K_INPUT = 1.5;
-const KRW_PER_1K_OUTPUT = 2.0;
+// solar-mini: input/output $0.15 per 1M tokens, USD→KRW 1300 기준.
+const KRW_PER_1K_INPUT = 0.195;
+const KRW_PER_1K_OUTPUT = 0.195;
 
 export const BOOTSTRAP_PROMPT = `당신은 에듀플로 AI 학원 매칭 어시스턴트입니다.
 사용자의 학습 선호도 태그와 제공된 학원 목록을 바탕으로 맞춤 추천을 제공합니다.
