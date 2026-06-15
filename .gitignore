@@ -24,6 +24,9 @@ dist-ssr
 *.sw?
 **firebase-adminsdk*.json
 
+# Local spec/design docs (not for repo)
+_specs/
+
 # Environment variables (never commit secrets)
 .env
 .env.local
