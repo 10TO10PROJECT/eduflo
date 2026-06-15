@@ -1,10 +1,9 @@
 {
   "compilerOptions": {
-    "lib": ["ES2022", "DOM"],
-    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "deno.ns"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "strict": true,
-    "skipLibCheck": true,
+    "skipLibCheck": true
   }
 }

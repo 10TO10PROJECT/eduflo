@@ -53,12 +53,12 @@ export interface SolarMessage {
 
 // ─── Constants ───────────────────────────────────────────────────
 
-const SOLAR_API_URL = "https://api.upstage.ai/v1/chat/completions";
-const SOLAR_MODEL   = "solar-mini";
+const SOLAR_API_URL = "https://api.upstage.ai/v1/solar/chat/completions";
+export const SOLAR_MODEL = "solar-1-mini-chat";
 
-// solar-mini: input $0.15/1M, output $0.15/1M (USD→KRW 1300 기준)
-const KRW_PER_1K_INPUT  = 0.195;
-const KRW_PER_1K_OUTPUT = 0.195;
+// 계획 문서 기준 임시 단가. 배포 전 Upstage 실제 pricing으로 재확인 필요.
+const KRW_PER_1K_INPUT = 1.5;
+const KRW_PER_1K_OUTPUT = 2.0;
 
 export const BOOTSTRAP_PROMPT = `당신은 에듀플로 AI 학원 매칭 어시스턴트입니다.
 사용자의 학습 선호도 태그와 제공된 학원 목록을 바탕으로 맞춤 추천을 제공합니다.
@@ -77,7 +77,7 @@ export const BOOTSTRAP_PROMPT = `당신은 에듀플로 AI 학원 매칭 어시�
 
 export async function callSolar(
   messages: SolarMessage[],
-  timeoutMs = 8000
+  timeoutMs = 8000,
 ): Promise<{ text: string; usage: { input: number; output: number } }> {
   const apiKey = Deno.env.get("UPSTAGE_API_KEY");
   if (!apiKey) throw new Error("UPSTAGE_API_KEY not set");
@@ -116,7 +116,7 @@ export async function callSolar(
 
 export function calcCostKrw(input: number, output: number): number {
   return Math.ceil(
-    (input / 1000) * KRW_PER_1K_INPUT + (output / 1000) * KRW_PER_1K_OUTPUT
+    (input / 1000) * KRW_PER_1K_INPUT + (output / 1000) * KRW_PER_1K_OUTPUT,
   );
 }
 
@@ -124,17 +124,92 @@ export function calcCostKrw(input: number, output: number): number {
 
 export function parseContentBlocks(solarText: string): ContentBlock[] {
   try {
-    // Solar가 JSON만 출력하도록 지시했지만, 앞뒤 공백/개행 제거
     const cleaned = solarText.trim();
     const parsed = JSON.parse(cleaned);
-    if (Array.isArray(parsed?.content_blocks)) {
-      return parsed.content_blocks as ContentBlock[];
+    if (!isRecord(parsed) || !Array.isArray(parsed.content_blocks)) {
+      throw new Error("content_blocks must be an array");
     }
-  } catch {
-    // 파싱 실패 시 텍스트 블록으로 폴백
-    console.warn("content_blocks parse failed, falling back to text block");
+    return validateContentBlocks(parsed.content_blocks);
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    throw new Error(`INVALID_CONTENT_BLOCKS: ${detail}`);
   }
-  return [{ type: "text", text: solarText }];
+}
+
+function validateContentBlocks(blocks: unknown[]): ContentBlock[] {
+  return blocks.map((block, index) => {
+    if (!isRecord(block) || typeof block.type !== "string") {
+      throw new Error(`block ${index} missing type`);
+    }
+
+    if (block.type === "text") {
+      if (typeof block.text !== "string" || !block.text.trim()) {
+        throw new Error(`text block ${index} missing text`);
+      }
+      return { type: "text", text: block.text };
+    }
+
+    if (block.type === "academy_cards") {
+      if (!Array.isArray(block.items) || block.items.length > 3) {
+        throw new Error(`academy_cards block ${index} must have 1-3 items`);
+      }
+      const items = block.items.map((item, itemIndex) => {
+        if (!isRecord(item)) {
+          throw new Error(
+            `academy card ${index}.${itemIndex} must be an object`,
+          );
+        }
+        if (
+          typeof item.id !== "string" ||
+          typeof item.name !== "string" ||
+          typeof item.match_score !== "number" ||
+          typeof item.thumbnail !== "string" ||
+          !Array.isArray(item.reason_tags) ||
+          !item.reason_tags.every((tag) => typeof tag === "string") ||
+          !(typeof item.price_monthly === "number" ||
+            item.price_monthly === null)
+        ) {
+          throw new Error(
+            `academy card ${index}.${itemIndex} has invalid schema`,
+          );
+        }
+        return {
+          id: item.id,
+          name: item.name,
+          match_score: item.match_score,
+          thumbnail: item.thumbnail,
+          reason_tags: item.reason_tags,
+          price_monthly: item.price_monthly,
+        };
+      });
+      return { type: "academy_cards", items };
+    }
+
+    if (block.type === "quick_replies") {
+      if (!Array.isArray(block.items) || block.items.length > 4) {
+        throw new Error(`quick_replies block ${index} must have 1-4 items`);
+      }
+      const items = block.items.map((item, itemIndex) => {
+        if (
+          !isRecord(item) ||
+          typeof item.label !== "string" ||
+          typeof item.payload !== "string"
+        ) {
+          throw new Error(
+            `quick reply ${index}.${itemIndex} has invalid schema`,
+          );
+        }
+        return { label: item.label, payload: item.payload };
+      });
+      return { type: "quick_replies", items };
+    }
+
+    throw new Error(`unsupported block type: ${block.type}`);
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 // ─── Academy DB Query ─────────────────────────────────────────────
@@ -149,15 +224,17 @@ export interface AcademyQueryArgs {
 
 export async function queryAcademies(
   supa: SupabaseClient,
-  args: AcademyQueryArgs
+  args: AcademyQueryArgs,
 ): Promise<object[]> {
   let q = supa
     .from("academies")
-    .select("id, name, description, address, subject, target_grade, tags, classes(fee, is_recruiting)")
+    .select(
+      "id, name, description, address, subject, target_grade, tags, classes(fee, is_recruiting)",
+    )
     .limit(5); // Solar가 최종 3개 선택
 
-  if (args.region)       q = q.ilike("address", `%${args.region}%`);
-  if (args.subject)      q = q.ilike("subject", `%${args.subject}%`);
+  if (args.region) q = q.ilike("address", `%${args.region}%`);
+  if (args.subject) q = q.ilike("subject", `%${args.subject}%`);
   if (args.target_grade) q = q.ilike("target_grade", `%${args.target_grade}%`);
   if (args.exclude_ids?.length) {
     q = q.not("id", "in", `(${args.exclude_ids.join(",")})`);
@@ -172,7 +249,9 @@ export async function queryAcademies(
   const academies = data ?? [];
   if (args.fee_max) {
     return academies.filter((a: any) =>
-      (a.classes as any[])?.some((c: any) => c.is_recruiting && (!c.fee || c.fee <= args.fee_max!))
+      (a.classes as any[])?.some((c: any) =>
+        c.is_recruiting && (!c.fee || c.fee <= args.fee_max!)
+      )
     );
   }
   return academies;
@@ -181,14 +260,34 @@ export async function queryAcademies(
 // ─── Profile Tags → Query Args ────────────────────────────────────
 
 // profile_tags 배열에서 지역/과목/학년 키워드 추출 (단순 매핑, 추후 Solar 위임 가능)
-const SUBJECT_KEYWORDS = ["수학", "영어", "과학", "국어", "물리", "화학", "생물", "역사", "사회"];
-const REGION_KEYWORDS  = ["강남", "서초", "송파", "마포", "분당", "판교", "목동", "노원", "용산"];
-const GRADE_PATTERNS   = /초[1-6]|중[1-3]|고[1-3]/;
+const SUBJECT_KEYWORDS = [
+  "수학",
+  "영어",
+  "과학",
+  "국어",
+  "물리",
+  "화학",
+  "생물",
+  "역사",
+  "사회",
+];
+const REGION_KEYWORDS = [
+  "강남",
+  "서초",
+  "송파",
+  "마포",
+  "분당",
+  "판교",
+  "목동",
+  "노원",
+  "용산",
+];
+const GRADE_PATTERNS = /초[1-6]|중[1-3]|고[1-3]/;
 
 export function extractQueryArgs(profileTags: string[]): AcademyQueryArgs {
   const tagStr = profileTags.join(" ");
-  const subject = SUBJECT_KEYWORDS.find(k => tagStr.includes(k));
-  const region  = REGION_KEYWORDS.find(k => tagStr.includes(k));
+  const subject = SUBJECT_KEYWORDS.find((k) => tagStr.includes(k));
+  const region = REGION_KEYWORDS.find((k) => tagStr.includes(k));
   const gradeMatch = tagStr.match(GRADE_PATTERNS);
 
   const feeMatch = tagStr.match(/월\s*(\d+)만/);
