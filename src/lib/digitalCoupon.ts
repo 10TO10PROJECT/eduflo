@@ -2,13 +2,32 @@ import { supabase } from "@/integrations/supabase/client";
 import type { DigitalCoupon, DigitalCouponWithAcademy } from "@/types/digitalCoupon";
 import type { CouponUseCode } from "@/types/couponUseCode";
 
-export async function issueSeminarCoupon(seminarId: string): Promise<DigitalCoupon> {
-  const { data, error } = await supabase.rpc("issue_seminar_coupon", {
+export async function issueSeminarCoupons(seminarId: string): Promise<DigitalCoupon[]> {
+  const { data, error } = await supabase.rpc("issue_seminar_coupons", {
     _seminar_id: seminarId,
   });
 
   if (error) throw error;
-  return data as DigitalCoupon;
+  return (data ?? []) as DigitalCoupon[];
+}
+
+export async function issueSeminarCoupon(seminarId: string): Promise<DigitalCoupon> {
+  const coupons = await issueSeminarCoupons(seminarId);
+  if (coupons.length === 0) {
+    throw new Error("쿠폰 발급에 실패했습니다.");
+  }
+  return coupons[0];
+}
+
+export async function hasUserCouponsForSeminar(seminarId: string, userId: string): Promise<boolean> {
+  const { count, error } = await supabase
+    .from("digital_coupons")
+    .select("*", { count: "exact", head: true })
+    .eq("seminar_id", seminarId)
+    .eq("user_id", userId);
+
+  if (error) throw error;
+  return (count ?? 0) > 0;
 }
 
 export async function fetchUserCouponForSeminar(
@@ -20,6 +39,8 @@ export async function fetchUserCouponForSeminar(
     .select("*")
     .eq("seminar_id", seminarId)
     .eq("user_id", userId)
+    .order("created_at", { ascending: true })
+    .limit(1)
     .maybeSingle();
 
   if (error) throw error;

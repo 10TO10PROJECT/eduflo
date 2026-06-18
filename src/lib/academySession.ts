@@ -19,6 +19,99 @@ export const BENEFIT_TYPE_OPTIONS: Array<{
   { id: "custom", label: "직접입력", defaultDiscount: "" },
 ];
 
+export interface SessionBenefitInput {
+  benefitType: BenefitType;
+  benefitLabel: string;
+  discountValue: string;
+}
+
+export interface SessionBenefitRow extends SessionBenefitInput {
+  id: string;
+  seminar_id: string;
+  sort_order: number;
+}
+
+export function createDefaultBenefit(type: BenefitType): SessionBenefitInput {
+  const option = BENEFIT_TYPE_OPTIONS.find((item) => item.id === type);
+  if (type === "custom") {
+    return { benefitType: "custom", benefitLabel: "", discountValue: "" };
+  }
+  return {
+    benefitType: type,
+    benefitLabel: option?.label ?? "",
+    discountValue: option?.defaultDiscount ?? "",
+  };
+}
+
+export function validateSessionBenefits(benefits: SessionBenefitInput[]) {
+  const errors: Record<string, string> = {};
+  if (benefits.length === 0) {
+    errors.benefits = "하나 이상의 혜택을 선택해주세요.";
+  }
+
+  const customBenefit = benefits.find((benefit) => benefit.benefitType === "custom");
+  if (customBenefit) {
+    if (!customBenefit.benefitLabel.trim()) {
+      errors.customBenefitLabel = "혜택명을 입력해주세요.";
+    }
+    if (!customBenefit.discountValue.trim()) {
+      errors.customDiscountValue = "할인값을 입력해주세요.";
+    }
+  }
+
+  return errors;
+}
+
+export async function fetchSeminarBenefits(seminarId: string): Promise<SessionBenefitRow[]> {
+  const { data, error } = await supabase
+    .from("seminar_benefits")
+    .select("id, seminar_id, benefit_type, benefit_label, discount_value, sort_order")
+    .eq("seminar_id", seminarId)
+    .order("sort_order", { ascending: true });
+
+  if (error) throw error;
+
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    seminar_id: row.seminar_id,
+    sort_order: row.sort_order,
+    benefitType: row.benefit_type as BenefitType,
+    benefitLabel: row.benefit_label,
+    discountValue: row.discount_value,
+  }));
+}
+
+async function replaceSeminarBenefits(seminarId: string, benefits: SessionBenefitInput[]) {
+  const { error: deleteError } = await supabase
+    .from("seminar_benefits")
+    .delete()
+    .eq("seminar_id", seminarId);
+
+  if (deleteError) throw deleteError;
+  if (benefits.length === 0) return;
+
+  const { error: insertError } = await supabase.from("seminar_benefits").insert(
+    benefits.map((benefit, index) => ({
+      seminar_id: seminarId,
+      benefit_type: benefit.benefitType,
+      benefit_label: benefit.benefitLabel.trim(),
+      discount_value: benefit.discountValue.trim(),
+      sort_order: index,
+    })),
+  );
+
+  if (insertError) throw insertError;
+}
+
+function legacyCouponFields(benefits: SessionBenefitInput[]) {
+  const first = benefits[0];
+  return {
+    coupon_benefit_type: first.benefitType,
+    coupon_benefit_label: first.benefitLabel.trim(),
+    coupon_discount_value: first.discountValue.trim(),
+  };
+}
+
 export type SessionTab = "active" | "upcoming" | "completed";
 
 export interface AcademySessionRow {
@@ -168,15 +261,14 @@ export interface CreateAcademySessionInput {
   locationName: string;
   locationAddress: string;
   capacity: number;
-  benefitType: BenefitType;
-  benefitLabel: string;
-  discountValue: string;
+  benefits: SessionBenefitInput[];
   validDays: number;
   usageCondition: string;
 }
 
 export async function createAcademySession(input: CreateAcademySessionInput) {
   const checkInCode = generateCheckInCode();
+  const legacyFields = legacyCouponFields(input.benefits);
 
   const { data, error } = await supabase
     .from("seminars")
@@ -191,9 +283,7 @@ export async function createAcademySession(input: CreateAcademySessionInput) {
       capacity: input.capacity,
       status: "recruiting",
       check_in_code: checkInCode,
-      coupon_benefit_type: input.benefitType,
-      coupon_benefit_label: input.benefitLabel.trim(),
-      coupon_discount_value: input.discountValue.trim(),
+      ...legacyFields,
       coupon_valid_days: input.validDays,
       coupon_usage_condition: input.usageCondition.trim() || null,
       description: null,
@@ -203,7 +293,10 @@ export async function createAcademySession(input: CreateAcademySessionInput) {
     .single();
 
   if (error) throw error;
-  return data.id as string;
+
+  const sessionId = data.id as string;
+  await replaceSeminarBenefits(sessionId, input.benefits);
+  return sessionId;
 }
 
 export async function fetchAcademySessionById(
@@ -228,14 +321,14 @@ export interface UpdateAcademySessionInput {
   locationName: string;
   locationAddress: string;
   capacity: number;
-  benefitType: BenefitType;
-  benefitLabel: string;
-  discountValue: string;
+  benefits: SessionBenefitInput[];
   validDays: number;
   usageCondition: string;
 }
 
 export async function updateAcademySession(input: UpdateAcademySessionInput) {
+  const legacyFields = legacyCouponFields(input.benefits);
+
   const { error } = await supabase
     .from("seminars")
     .update({
@@ -246,15 +339,15 @@ export async function updateAcademySession(input: UpdateAcademySessionInput) {
         address: input.locationAddress.trim(),
       }),
       capacity: input.capacity,
-      coupon_benefit_type: input.benefitType,
-      coupon_benefit_label: input.benefitLabel.trim(),
-      coupon_discount_value: input.discountValue.trim(),
+      ...legacyFields,
       coupon_valid_days: input.validDays,
       coupon_usage_condition: input.usageCondition.trim() || null,
     })
     .eq("id", input.sessionId);
 
   if (error) throw error;
+
+  await replaceSeminarBenefits(input.sessionId, input.benefits);
 }
 
 export async function deleteAcademySession(sessionId: string) {

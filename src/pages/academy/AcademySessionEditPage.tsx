@@ -4,21 +4,24 @@ import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 
 import AddressSearch from "@/components/AddressSearch";
+import SessionBenefitSelector from "@/components/academy/SessionBenefitSelector";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import {
   BENEFIT_TYPE_OPTIONS,
+  createDefaultBenefit,
   fetchAcademySessionById,
+  fetchSeminarBenefits,
   parseSessionLocation,
   resolveAdminAcademyId,
   updateAcademySession,
+  validateSessionBenefits,
   type BenefitType,
+  type SessionBenefitInput,
 } from "@/lib/academySession";
 import { logError } from "@/lib/errorLogger";
-import { cn } from "@/lib/utils";
 
 const hourOptions = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, "0"));
 const minuteOptions = ["00", "15", "30", "45"];
@@ -41,9 +44,9 @@ const AcademySessionEditPage = () => {
   const [capacity, setCapacity] = useState("30");
   const [checkInCode, setCheckInCode] = useState<string | null>(null);
 
-  const [benefitType, setBenefitType] = useState<BenefitType>("first_month_discount");
-  const [benefitLabel, setBenefitLabel] = useState("첫달할인");
-  const [discountValue, setDiscountValue] = useState("10%");
+  const [benefits, setBenefits] = useState<SessionBenefitInput[]>([
+    createDefaultBenefit("first_month_discount"),
+  ]);
   const [validDays, setValidDays] = useState("30");
   const [usageCondition, setUsageCondition] = useState("");
 
@@ -89,15 +92,30 @@ const AcademySessionEditPage = () => {
         const location = parseSessionLocation(existing.location);
         setLocationName(location.name);
         setLocationAddress(location.address);
-
-        const type = isBenefitType(existing.coupon_benefit_type)
-          ? existing.coupon_benefit_type
-          : "custom";
-        setBenefitType(type);
-        setBenefitLabel(existing.coupon_benefit_label ?? "");
-        setDiscountValue(existing.coupon_discount_value ?? "");
         setValidDays(String(existing.coupon_valid_days ?? 30));
         setUsageCondition(existing.coupon_usage_condition ?? "");
+
+        const storedBenefits = await fetchSeminarBenefits(sessionId);
+        if (storedBenefits.length > 0) {
+          setBenefits(
+            storedBenefits.map((benefit) => ({
+              benefitType: benefit.benefitType,
+              benefitLabel: benefit.benefitLabel,
+              discountValue: benefit.discountValue,
+            })),
+          );
+        } else {
+          const type = isBenefitType(existing.coupon_benefit_type)
+            ? existing.coupon_benefit_type
+            : "custom";
+          setBenefits([
+            {
+              benefitType: type,
+              benefitLabel: existing.coupon_benefit_label ?? "",
+              discountValue: existing.coupon_discount_value ?? "",
+            },
+          ]);
+        }
       } catch (error) {
         logError("fetch-academy-session-edit", error);
         toast.error("설명회 정보를 불러올 수 없습니다.");
@@ -110,23 +128,13 @@ const AcademySessionEditPage = () => {
     load();
   }, [navigate, sessionId]);
 
-  const handleBenefitTypeChange = (type: BenefitType) => {
-    setBenefitType(type);
-    const option = BENEFIT_TYPE_OPTIONS.find((item) => item.id === type);
-    if (!option) return;
-    if (type !== "custom") {
-      setBenefitLabel(option.label);
-      setDiscountValue(option.defaultDiscount);
-    }
-  };
-
   const validate = () => {
-    const nextErrors: Record<string, string> = {};
+    const nextErrors: Record<string, string> = {
+      ...validateSessionBenefits(benefits),
+    };
     if (!title.trim()) nextErrors.title = "제목을 입력해주세요.";
     if (!date) nextErrors.date = "일시를 선택해주세요.";
     if (!locationName.trim()) nextErrors.locationName = "장소를 입력해주세요.";
-    if (!benefitLabel.trim()) nextErrors.benefitLabel = "혜택명을 입력해주세요.";
-    if (!discountValue.trim()) nextErrors.discountValue = "할인값을 입력해주세요.";
 
     const days = parseInt(validDays, 10);
     if (Number.isNaN(days) || days < 7 || days > 90) {
@@ -160,9 +168,7 @@ const AcademySessionEditPage = () => {
         locationName,
         locationAddress,
         capacity: parseInt(capacity, 10),
-        benefitType,
-        benefitLabel,
-        discountValue,
+        benefits,
         validDays: parseInt(validDays, 10),
         usageCondition,
       });
@@ -260,67 +266,15 @@ const AcademySessionEditPage = () => {
           </div>
         </section>
 
-        <section className="space-y-4">
-          <h2 className="text-sm font-semibold text-foreground">발급할 혜택</h2>
-
-          <div className="flex flex-wrap gap-2">
-            {BENEFIT_TYPE_OPTIONS.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => handleBenefitTypeChange(option.id)}
-                className={cn(
-                  "px-3 py-1.5 rounded-full text-sm border transition-colors",
-                  benefitType === option.id
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-card border-border text-foreground",
-                )}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="benefitLabel">혜택명</Label>
-            <Input
-              id="benefitLabel"
-              value={benefitLabel}
-              onChange={(e) => setBenefitLabel(e.target.value)}
-              disabled={benefitType !== "custom"}
-            />
-            {errors.benefitLabel && <p className="text-xs text-destructive">{errors.benefitLabel}</p>}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="discountValue">할인값</Label>
-            <Input id="discountValue" value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} />
-            {errors.discountValue && <p className="text-xs text-destructive">{errors.discountValue}</p>}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="validDays">유효기간 (일)</Label>
-            <Input
-              id="validDays"
-              type="number"
-              min={7}
-              max={90}
-              value={validDays}
-              onChange={(e) => setValidDays(e.target.value)}
-            />
-            {errors.validDays && <p className="text-xs text-destructive">{errors.validDays}</p>}
-          </div>
-        </section>
-
-        <section className="space-y-2">
-          <h2 className="text-sm font-semibold text-foreground">사용 조건</h2>
-          <Textarea
-            value={usageCondition}
-            onChange={(e) => setUsageCondition(e.target.value)}
-            rows={2}
-            maxLength={120}
-          />
-        </section>
+        <SessionBenefitSelector
+          benefits={benefits}
+          onChange={setBenefits}
+          validDays={validDays}
+          onValidDaysChange={setValidDays}
+          usageCondition={usageCondition}
+          onUsageConditionChange={setUsageCondition}
+          errors={errors}
+        />
       </main>
 
       <div className="fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-lg border-t border-border p-4 z-50">

@@ -13,7 +13,7 @@ import { firebaseAuth } from "@/integrations/firebase/client";
 import { supabase } from "@/integrations/supabase/client";
 import { formatPhoneWithDash, getDigitsOnly } from "@/lib/formatPhone";
 import { logError } from "@/lib/errorLogger";
-import { fetchUserCouponForSeminar } from "@/lib/digitalCoupon";
+import { hasUserCouponsForSeminar } from "@/lib/digitalCoupon";
 import { formatSeminarHeader, validateSeminarSession } from "@/lib/parentCheckIn";
 import { sendIdTokenToBackend } from "@/lib/sendIdTokenToBackend";
 
@@ -82,7 +82,7 @@ const ParentCheckInVerifyPage = () => {
   const redirectIfAlreadyCheckedIn = useCallback(
     async (userId: string) => {
       if (!sessionId) return false;
-      const existingCoupon = await fetchUserCouponForSeminar(sessionId, userId);
+      const existingCoupon = await hasUserCouponsForSeminar(sessionId, userId);
       if (existingCoupon) {
         navigate("/p/coupons", { replace: true });
         return true;

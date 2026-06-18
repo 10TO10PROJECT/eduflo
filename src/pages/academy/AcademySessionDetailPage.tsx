@@ -26,11 +26,13 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   deleteAcademySession,
   fetchAcademySessions,
+  fetchSeminarBenefits,
   formatSessionDateTime,
   getParentCheckInUrl,
   parseSessionLocation,
   resolveAdminAcademyId,
   type AcademySessionRow,
+  type SessionBenefitRow,
 } from "@/lib/academySession";
 import { logError } from "@/lib/errorLogger";
 
@@ -39,6 +41,7 @@ const AcademySessionDetailPage = () => {
   const navigate = useNavigate();
 
   const [session, setSession] = useState<AcademySessionRow | null>(null);
+  const [benefits, setBenefits] = useState<SessionBenefitRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -74,6 +77,7 @@ const AcademySessionDetailPage = () => {
         }
 
         setSession(found);
+        setBenefits(await fetchSeminarBenefits(sessionId));
       } catch (error) {
         logError("fetch-academy-session-detail", error);
         toast.error("설명회 정보를 불러올 수 없습니다.");
@@ -119,6 +123,16 @@ const AcademySessionDetailPage = () => {
   if (!session) return null;
 
   const location = parseSessionLocation(session.location);
+  const displayBenefits =
+    benefits.length > 0
+      ? benefits
+      : session.coupon_benefit_label
+        ? [{
+            id: "legacy",
+            benefitLabel: session.coupon_benefit_label,
+            discountValue: session.coupon_discount_value ?? "",
+          }]
+        : [];
 
   return (
     <div className="min-h-screen bg-background pb-28">
@@ -183,11 +197,21 @@ const AcademySessionDetailPage = () => {
           </div>
         </div>
 
-        <div className="bg-card border border-border rounded-2xl p-4 text-sm">
-          <p className="font-medium text-foreground">{session.coupon_benefit_label ?? "혜택"}</p>
-          <p className="text-primary font-bold mt-1">{session.coupon_discount_value}</p>
+        <div className="bg-card border border-border rounded-2xl p-4 text-sm space-y-3">
+          <p className="font-medium text-foreground">
+            발급 혜택 {displayBenefits.length > 0 ? `${displayBenefits.length}개` : ""}
+          </p>
+          {displayBenefits.map((benefit, index) => (
+            <div
+              key={benefit.id}
+              className={index > 0 ? "pt-3 border-t border-border" : undefined}
+            >
+              <p className="font-medium text-foreground">{benefit.benefitLabel}</p>
+              <p className="text-primary font-bold mt-1">{benefit.discountValue}</p>
+            </div>
+          ))}
           {session.coupon_usage_condition && (
-            <p className="text-muted-foreground mt-2">{session.coupon_usage_condition}</p>
+            <p className="text-muted-foreground pt-2 border-t border-border">{session.coupon_usage_condition}</p>
           )}
         </div>
       </main>

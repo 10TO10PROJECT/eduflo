@@ -14,6 +14,7 @@ export interface DigitalCoupon {
   issued_at: string;
   used_at: string | null;
   enrolled_at: string | null;
+  seminar_benefit_id: string | null;
   created_at: string;
 }
 
