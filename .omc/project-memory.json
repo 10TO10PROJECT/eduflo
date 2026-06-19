@@ -1,0 +1,187 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1781421828452,
+  "projectRoot": "/Users/jaegupark/Desktop/eduflo",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "tsconfig.json"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "react",
+        "version": "18.3.1",
+        "category": "frontend"
+      },
+      {
+        "name": "react-dom",
+        "version": "18.3.1",
+        "category": "frontend"
+      },
+      {
+        "name": "vite",
+        "version": "5.4.19",
+        "category": "build"
+      }
+    ],
+    "packageManager": "npm",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "npm run build",
+    "testCommand": null,
+    "lintCommand": "npm run lint",
+    "devCommand": "npm run dev",
+    "scripts": {
+      "dev": "vite",
+      "build": "vite build",
+      "build:dev": "vite build --mode development",
+      "lint": "eslint .",
+      "preview": "vite preview"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": "type-based"
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "docs",
+      "public",
+      "src"
+    ],
+    "gitBranches": null
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "dist": {
+      "path": "dist",
+      "purpose": "Distribution/build output",
+      "fileCount": 4,
+      "lastAccessed": 1781421828395,
+      "keyFiles": [
+        "favicon.ico",
+        "index.html",
+        "logo.png",
+        "robots.txt"
+      ]
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 3,
+      "lastAccessed": 1781421828396,
+      "keyFiles": [
+        "beta-seminar-coupon.md",
+        "notification-alimtalk-guide.md",
+        "ssodaa-kakao-templates.md"
+      ]
+    },
+    "public": {
+      "path": "public",
+      "purpose": "Public files",
+      "fileCount": 3,
+      "lastAccessed": 1781421828405,
+      "keyFiles": [
+        "favicon.ico",
+        "logo.png",
+        "robots.txt"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 5,
+      "lastAccessed": 1781421828407,
+      "keyFiles": [
+        "App.tsx",
+        "index.css",
+        "main.tsx",
+        "vite-env.d.ts"
+      ]
+    },
+    "supabase": {
+      "path": "supabase",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1781421828409,
+      "keyFiles": [
+        "config.toml"
+      ]
+    },
+    "dist/assets": {
+      "path": "dist/assets",
+      "purpose": "Static assets",
+      "fileCount": 7,
+      "lastAccessed": 1781421828410,
+      "keyFiles": [
+        "AcademyDetailMap-9oxodDbl.js",
+        "LocationMap-B9T2TgD-.js",
+        "index-BrQ5Dr0y.css"
+      ]
+    },
+    "src/assets": {
+      "path": "src/assets",
+      "purpose": "Static assets",
+      "fileCount": 3,
+      "lastAccessed": 1781421828411,
+      "keyFiles": [
+        "logo.png",
+        "marker.png"
+      ]
+    },
+    "src/components": {
+      "path": "src/components",
+      "purpose": "UI components",
+      "fileCount": 58,
+      "lastAccessed": 1781421828411,
+      "keyFiles": [
+        "AcademyDetailMap.tsx",
+        "AcademyMap.tsx",
+        "AcademyMemberManagement.tsx"
+      ]
+    },
+    "src/lib": {
+      "path": "src/lib",
+      "purpose": "Library code",
+      "fileCount": 13,
+      "lastAccessed": 1781421828412,
+      "keyFiles": [
+        "academySession.ts",
+        "businessNumber.ts",
+        "classSubjects.ts"
+      ]
+    },
+    "supabase/migrations": {
+      "path": "supabase/migrations",
+      "purpose": "Database migrations",
+      "fileCount": 94,
+      "lastAccessed": 1781421828413,
+      "keyFiles": [
+        "20251229100131_76166afb-9676-4b16-983a-bf8b610cd6e4.sql",
+        "20251229100315_6dac7089-e9dc-4355-af92-29a042ef1df1.sql",
+        "20251229101232_a6b1ddd0-d61a-4057-ab07-5b673de49305.sql"
+      ]
+    }
+  },
+  "hotPaths": [],
+  "userDirectives": []
+}

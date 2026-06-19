@@ -115,8 +115,8 @@ const handler = async (req: Request): Promise<Response> => {
     const isApproved = status === 'approved';
     
     const subject = isApproved 
-      ? `[에듀플로] 사업자 인증이 완료되었습니다` 
-      : `[에듀플로] 사업자 인증 결과 안내`;
+      ? `[10to10] 사업자 인증이 완료되었습니다` 
+      : `[10to10] 사업자 인증 결과 안내`;
 
     const htmlContent = isApproved 
       ? `
@@ -138,20 +138,20 @@ const handler = async (req: Request): Promise<Response> => {
         <body>
           <div class="container">
             <div class="header">
-              <h1>에듀플로</h1>
+              <h1>10to10</h1>
             </div>
             <div class="content">
               <div class="success-icon">✅</div>
               <h2>축하합니다! 사업자 인증이 완료되었습니다.</h2>
               <p><strong>${businessName}</strong>의 사업자 인증이 승인되었습니다.</p>
-              <p>이제 에듀플로에서 학원 프로필을 등록하고 학부모님들과 소통할 수 있습니다.</p>
+              <p>이제 10to10에서 학원 프로필을 등록하고 학부모님들과 소통할 수 있습니다.</p>
               <p style="text-align: center;">
                 <a href="https://edumap.app/academy/setup" class="button">학원 프로필 등록하기</a>
               </p>
             </div>
             <div class="footer">
               <p>본 메일은 발신 전용입니다.</p>
-              <p>© 2024 에듀플로. All rights reserved.</p>
+              <p>© 2024 10to10. All rights reserved.</p>
             </div>
           </div>
         </body>
@@ -177,7 +177,7 @@ const handler = async (req: Request): Promise<Response> => {
         <body>
           <div class="container">
             <div class="header">
-              <h1>에듀플로</h1>
+              <h1>10to10</h1>
             </div>
             <div class="content">
               <div class="warning-icon">⚠️</div>
@@ -194,7 +194,7 @@ const handler = async (req: Request): Promise<Response> => {
             </div>
             <div class="footer">
               <p>본 메일은 발신 전용입니다.</p>
-              <p>© 2024 에듀플로. All rights reserved.</p>
+              <p>© 2024 10to10. All rights reserved.</p>
             </div>
           </div>
         </body>
@@ -208,7 +208,7 @@ const handler = async (req: Request): Promise<Response> => {
         Authorization: `Bearer ${RESEND_API_KEY}`,
       },
       body: JSON.stringify({
-        from: "에듀플로 <onboarding@resend.dev>",
+        from: "10to10 <onboarding@resend.dev>",
         to: [email],
         subject: subject,
         html: htmlContent,
