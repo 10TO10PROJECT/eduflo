@@ -22,13 +22,12 @@ const Logo = ({ size = "md", showText = true }: LogoProps) => {
     <div className="flex flex-col items-center gap-2">
       <img 
         src={logoImage} 
-        alt="에듀맵 로고" 
+        alt="10to10 로고" 
         className={cn(sizeClasses[size], "rounded-md")}
       />
       {showText && (
-        <div className={cn("font-bold text-foreground", textSizeClasses[size])}>
-          <span className="text-primary">에듀</span>
-          <span className="text-primary/80">플로</span>
+        <div className={cn("font-bold text-primary", textSizeClasses[size])}>
+          10to10
         </div>
       )}
     </div>

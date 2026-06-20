@@ -103,7 +103,7 @@ const TEMPLATES: Record<string, TemplateDefinition> = {
     messageTemplate: [
       "안녕하세요, #{academyName} 담당자님.",
       "",
-      "EDUFLO에서 #{senderName}님이 새 메시지를 보냈습니다.",
+      "10to10에서 #{senderName}님이 새 메시지를 보냈습니다.",
       "",
       "- 문의주제: #{inquiryTopic}",
       "- 도착시간: #{receivedAt}",

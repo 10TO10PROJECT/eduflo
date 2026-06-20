@@ -16,7 +16,7 @@
 | 학부모 | P-01 ~ P-07 (7개) | `/p/check-in`, 마이페이지「쿠폰함」 |
 | 학원 Admin | A-01 ~ A-05 (5개) | Admin 홈「설명회 · 쿠폰」→ `/admin/sessions` |
 
-기존 `/admin/seminars`(레거시 설명회 관리)와 **별도 플로우**입니다. BETA는 1세션 1혜택·디지털 쿠폰 중심으로 단순화되어 있습니다.
+기존 `/admin/seminars`(레거시 설명회 관리)와 **별도 플로우**입니다. BETA는 **1세션 복수 혜택**·혜택별 디지털 쿠폰 발급 중심으로 단순화되어 있습니다.
 
 ---
 
@@ -93,10 +93,10 @@
 |------|------|
 | 경로 | `/p/check-in/:sessionId/complete` |
 | 파일 | `src/pages/parent/ParentCheckInCompletePage.tsx` |
-| RPC | `issue_seminar_coupon(_seminar_id)` |
-| UI | 쿠폰 카드(학원·혜택·할인값·D-day) +「내 쿠폰함으로」 |
+| RPC | `issue_seminar_coupons(_seminar_id)` |
+| UI | 선택된 혜택 수만큼 쿠폰 카드(학원·혜택·할인값·D-day) +「내 쿠폰함으로」 |
 
-1 학부모 · 1 설명회 · 1 쿠폰 (`UNIQUE (user_id, seminar_id)`).
+1 학부모 · 1 설명회 · **혜택별 1 쿠폰** (`UNIQUE (user_id, seminar_benefit_id)`).
 
 ---
 
@@ -167,11 +167,12 @@
 |------|------|
 | 경로 | `/admin/sessions/create` |
 | 파일 | `src/pages/academy/AcademySessionCreatePage.tsx` |
-| 입력 | 세션 정보(제목·일시·장소·인원) + 혜택(유형·할인값·유효기간 7~90일) + 사용 조건 |
-| 생성 | `seminars` + `coupon_*` 컬럼, `check_in_code` 자동 생성 |
+| 입력 | 세션 정보(제목·일시·장소·인원) + **발급 혜택 복수 선택**(유형·할인값·유효기간 7~90일) + 사용 조건 |
+| 생성 | `seminars` + `seminar_benefits` 행, `coupon_*` 컬럼(첫 혜택 요약), `check_in_code` 자동 생성 |
 | 완료 | A-03(QR 화면)으로 이동 |
 
-혜택 유형 칩: 첫달할인 / 레테권 / 교재 / 상담권 / 직접입력
+혜택 유형 칩(복수 선택): 첫달할인 / 레테권 / 교재 / 상담권 / 직접입력  
+컴포넌트: `src/components/academy/SessionBenefitSelector.tsx`
 
 ---
 
@@ -250,6 +251,7 @@
 | `20260605130000_coupon_preview_redeem.sql` | `preview_coupon_use_code`, 멤버 권한, `mask_parent_name` |
 | `20260605140000_seminar_coupon_report.sql` | `enrolled_at`, 리포트·등록 처리 RPC |
 | `20260605150000_coupon_member_rls_realtime.sql` | 멤버 RLS SELECT, Realtime publication |
+| `20260605160000_seminar_multi_benefits.sql` | `seminar_benefits`, `issue_seminar_coupons`, 혜택별 쿠폰 UNIQUE |
 
 적용:
 
@@ -261,7 +263,8 @@ supabase db push
 
 | RPC | 용도 |
 |-----|------|
-| `issue_seminar_coupon(_seminar_id)` | P-03 쿠폰 발급 |
+| `issue_seminar_coupons(_seminar_id)` | P-03 혜택별 쿠폰 일괄 발급 |
+| `issue_seminar_coupon(_seminar_id)` | 위 RPC 래퍼(첫 쿠폰 반환, 하위 호환) |
 | `issue_coupon_use_code(_coupon_id, _force_new)` | P-06 사용 코드 발급 |
 | `preview_coupon_use_code(_code, _seminar_id)` | A-04 코드 미리보기 |
 | `redeem_coupon_use_code(_code, _seminar_id)` | A-04 사용 처리 |

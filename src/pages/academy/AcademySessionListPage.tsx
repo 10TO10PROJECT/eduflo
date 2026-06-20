@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus } from "lucide-react";
+import { ArrowLeft, Plus } from "lucide-react";
 import { toast } from "sonner";
 
+import AdminBottomNavigation from "@/components/AdminBottomNavigation";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -58,7 +60,10 @@ const AcademySessionListPage = () => {
   return (
     <div className="min-h-screen bg-background pb-24">
       <header className="sticky top-0 bg-card/80 backdrop-blur-lg border-b border-border z-40">
-        <div className="max-w-lg mx-auto px-4 h-14 flex items-center">
+        <div className="max-w-lg mx-auto px-4 h-14 flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={() => navigate("/admin/home")}>
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
           <h1 className="font-semibold text-foreground">설명회</h1>
         </div>
       </header>
@@ -112,10 +117,12 @@ const AcademySessionListPage = () => {
         type="button"
         aria-label="새 설명회 생성"
         onClick={() => navigate("/admin/sessions/create")}
-        className="fixed bottom-6 right-4 z-50 w-14 h-14 rounded-full gradient-primary text-primary-foreground shadow-soft flex items-center justify-center active:scale-95 transition-transform"
+        className="fixed bottom-20 right-4 z-40 w-14 h-14 rounded-full gradient-primary text-primary-foreground shadow-soft flex items-center justify-center active:scale-95 transition-transform"
       >
         <Plus className="w-6 h-6" />
       </button>
+
+      <AdminBottomNavigation />
     </div>
   );
 };

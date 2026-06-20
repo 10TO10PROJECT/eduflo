@@ -8,7 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   formatValidUntil,
   getCouponDday,
-  issueSeminarCoupon,
+  issueSeminarCoupons,
 } from "@/lib/digitalCoupon";
 import { logError } from "@/lib/errorLogger";
 import type { DigitalCoupon } from "@/types/digitalCoupon";
@@ -24,7 +24,7 @@ const ParentCheckInCompletePage = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
 
-  const [coupon, setCoupon] = useState<CouponView | null>(null);
+  const [coupons, setCoupons] = useState<CouponView[]>([]);
   const [loading, setLoading] = useState(true);
   const [showSuccess, setShowSuccess] = useState(false);
 
@@ -34,7 +34,7 @@ const ParentCheckInCompletePage = () => {
       return;
     }
 
-    const issueCoupon = async () => {
+    const issueCoupons = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.user) {
@@ -42,15 +42,16 @@ const ParentCheckInCompletePage = () => {
           return;
         }
 
-        const issued = await issueSeminarCoupon(sessionId);
+        const issued = await issueSeminarCoupons(sessionId);
+        const couponIds = issued.map((coupon) => coupon.id);
         const { data: enriched, error } = await supabase
           .from("digital_coupons")
           .select("*, academy:academies(name, profile_image)")
-          .eq("id", issued.id)
-          .maybeSingle();
+          .in("id", couponIds)
+          .order("created_at", { ascending: true });
 
         if (error) throw error;
-        setCoupon((enriched ?? issued) as CouponView);
+        setCoupons((enriched ?? issued) as CouponView[]);
         requestAnimationFrame(() => setShowSuccess(true));
       } catch (error) {
         logError("check-in-issue-coupon", error);
@@ -61,7 +62,7 @@ const ParentCheckInCompletePage = () => {
       }
     };
 
-    issueCoupon();
+    issueCoupons();
   }, [navigate, sessionId]);
 
   if (loading) {
@@ -72,10 +73,11 @@ const ParentCheckInCompletePage = () => {
     );
   }
 
-  if (!coupon) return null;
+  if (coupons.length === 0) return null;
 
-  const dDay = getCouponDday(coupon.valid_until);
-  const validUntilLabel = formatValidUntil(coupon.valid_until);
+  const primaryCoupon = coupons[0];
+  const validUntilLabel = formatValidUntil(primaryCoupon.valid_until);
+  const dDay = getCouponDday(primaryCoupon.valid_until);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -99,43 +101,46 @@ const ParentCheckInCompletePage = () => {
           <div className="text-center space-y-1">
             <div className="inline-flex items-center gap-1.5 text-primary text-sm font-medium">
               <Sparkles className="w-4 h-4" />
-              쿠폰이 발급되었습니다
+              쿠폰 {coupons.length}개가 발급되었습니다
             </div>
             <p className="text-xs text-muted-foreground">{validUntilLabel}까지 사용 가능</p>
           </div>
 
-          <div className="gradient-primary rounded-3xl p-6 shadow-soft text-primary-foreground animate-fade-up">
-            <div className="flex items-center gap-3 mb-5">
-              <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center overflow-hidden flex-shrink-0">
-                {coupon.academy?.profile_image ? (
-                  <img
-                    src={coupon.academy.profile_image}
-                    alt={coupon.academy.name}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <Building2 className="w-6 h-6" />
-                )}
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm text-primary-foreground/85">혜택 쿠폰</p>
-                <p className="font-semibold truncate">{coupon.academy?.name ?? "학원"}</p>
-              </div>
-              {dDay && (
-                <span className="ml-auto text-xs font-bold bg-white/20 px-2.5 py-1 rounded-full">
-                  {dDay}
-                </span>
-              )}
-            </div>
+          <div className="space-y-3">
+            {coupons.map((coupon) => (
+              <div
+                key={coupon.id}
+                className="gradient-primary rounded-3xl p-6 shadow-soft text-primary-foreground animate-fade-up"
+              >
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center overflow-hidden flex-shrink-0">
+                    {coupon.academy?.profile_image ? (
+                      <img
+                        src={coupon.academy.profile_image}
+                        alt={coupon.academy.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <Building2 className="w-6 h-6" />
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm text-primary-foreground/85">혜택 쿠폰</p>
+                    <p className="font-semibold truncate">{coupon.academy?.name ?? "학원"}</p>
+                  </div>
+                  {coupons.length === 1 && dDay && (
+                    <span className="ml-auto text-xs font-bold bg-white/20 px-2.5 py-1 rounded-full">
+                      {dDay}
+                    </span>
+                  )}
+                </div>
 
-            <div className="space-y-2">
-              <p className="text-lg font-bold leading-tight">{coupon.benefit_label}</p>
-              <p className="text-3xl font-extrabold tracking-tight">{coupon.discount_value}</p>
-            </div>
-
-            <div className="mt-5 pt-4 border-t border-white/20 text-sm text-primary-foreground/90">
-              {validUntilLabel}까지 사용 가능
-            </div>
+                <div className="space-y-2">
+                  <p className="text-lg font-bold leading-tight">{coupon.benefit_label}</p>
+                  <p className="text-3xl font-extrabold tracking-tight">{coupon.discount_value}</p>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </main>
