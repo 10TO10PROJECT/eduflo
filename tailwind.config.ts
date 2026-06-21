@@ -74,10 +74,25 @@ export default {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        "fade-up": {
+          from: { opacity: "0", transform: "translateY(8px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+        shimmer: {
+          "0%": { backgroundPosition: "200% 0" },
+          "100%": { backgroundPosition: "-200% 0" },
+        },
+        "typing-dot": {
+          "0%, 60%, 100%": { opacity: "0.35", transform: "scale(0.85)" },
+          "30%": { opacity: "1", transform: "scale(1.15)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "fade-up": "fade-up 0.45s ease-out",
+        shimmer: "shimmer 1.4s infinite",
+        "typing-dot": "typing-dot 1.2s infinite ease-in-out",
       },
     },
   },
