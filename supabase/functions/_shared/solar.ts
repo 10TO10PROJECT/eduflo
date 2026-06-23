@@ -51,10 +51,22 @@ export interface SolarMessage {
   content: string;
 }
 
+export interface CallSolarOptions {
+  timeoutMs?: number;
+  promptCacheKey?: string;
+}
+
+export interface ParseContentBlockOptions {
+  allowedAcademyIds?: Set<string>;
+  maxAcademyCards?: number;
+}
+
 // ─── Constants ───────────────────────────────────────────────────
 
 const SOLAR_API_URL = "https://api.upstage.ai/v1/chat/completions";
 export const SOLAR_MODEL = "solar-mini";
+export const MAX_ACADEMY_CARDS_PER_TURN = 3;
+export const MAX_ACADEMY_CARDS_PER_SESSION = 6;
 
 // solar-mini: input/output $0.15 per 1M tokens, USD→KRW 1300 기준.
 const KRW_PER_1K_INPUT = 0.195;
@@ -69,21 +81,116 @@ export const BOOTSTRAP_PROMPT = `당신은 에듀플로 AI 학원 매칭 어시�
 3. academy_cards: 제공된 학원 목록에서만 선택 (없는 학원 만들기 금지).
 4. academy_cards items는 최대 3개.
 5. quick_replies items는 최대 4개.
+6. price_monthly를 알 수 없으면 0으로 출력합니다.
+7. quick_replies payload는 반드시 filter:, relax:, action: 중 하나로 시작합니다.
 
 출력 형식:
 {"content_blocks":[{"type":"text","text":"..."},{"type":"academy_cards","items":[{"id":"...","name":"...","match_score":90,"thumbnail":"📐","reason_tags":["소수정예"],"price_monthly":450000}]},{"type":"quick_replies","items":[{"label":"수학만 보기","payload":"filter:subject=math"}]}]}`;
+
+const CONTENT_BLOCKS_RESPONSE_FORMAT = {
+  type: "json_schema",
+  json_schema: {
+    name: "eduflo_chat_content_blocks",
+    strict: true,
+    schema: {
+      type: "object",
+      properties: {
+        content_blocks: {
+          type: "array",
+          items: {
+            anyOf: [
+              {
+                type: "object",
+                properties: {
+                  type: { type: "string", enum: ["text"] },
+                  text: { type: "string" },
+                },
+                required: ["type", "text"],
+                additionalProperties: false,
+              },
+              {
+                type: "object",
+                properties: {
+                  type: { type: "string", enum: ["academy_cards"] },
+                  items: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        id: { type: "string" },
+                        name: { type: "string" },
+                        match_score: { type: "number" },
+                        thumbnail: { type: "string" },
+                        reason_tags: {
+                          type: "array",
+                          items: { type: "string" },
+                        },
+                        price_monthly: { type: "number" },
+                      },
+                      required: [
+                        "id",
+                        "name",
+                        "match_score",
+                        "thumbnail",
+                        "reason_tags",
+                        "price_monthly",
+                      ],
+                      additionalProperties: false,
+                    },
+                  },
+                },
+                required: ["type", "items"],
+                additionalProperties: false,
+              },
+              {
+                type: "object",
+                properties: {
+                  type: { type: "string", enum: ["quick_replies"] },
+                  items: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        label: { type: "string" },
+                        payload: { type: "string" },
+                      },
+                      required: ["label", "payload"],
+                      additionalProperties: false,
+                    },
+                  },
+                },
+                required: ["type", "items"],
+                additionalProperties: false,
+              },
+            ],
+          },
+        },
+      },
+      required: ["content_blocks"],
+      additionalProperties: false,
+    },
+  },
+};
 
 // ─── Solar API ───────────────────────────────────────────────────
 
 export async function callSolar(
   messages: SolarMessage[],
-  timeoutMs = 8000,
+  options: CallSolarOptions = {},
 ): Promise<{ text: string; usage: { input: number; output: number } }> {
   const apiKey = Deno.env.get("UPSTAGE_API_KEY");
   if (!apiKey) throw new Error("UPSTAGE_API_KEY not set");
 
   const controller = new AbortController();
+  const timeoutMs = options.timeoutMs ?? 8000;
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const body: Record<string, unknown> = {
+    model: SOLAR_MODEL,
+    messages,
+    temperature: 0.3,
+    response_format: CONTENT_BLOCKS_RESPONSE_FORMAT,
+  };
+  if (options.promptCacheKey) body.prompt_cache_key = options.promptCacheKey;
 
   try {
     const res = await fetch(SOLAR_API_URL, {
@@ -93,7 +200,7 @@ export async function callSolar(
         "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ model: SOLAR_MODEL, messages }),
+      body: JSON.stringify(body),
     });
 
     if (!res.ok) {
@@ -123,20 +230,32 @@ export function calcCostKrw(input: number, output: number): number {
 // ─── Content Blocks Parser ────────────────────────────────────────
 
 export function parseContentBlocks(solarText: string): ContentBlock[] {
+  return parseContentBlocksWithOptions(solarText);
+}
+
+export function parseContentBlocksWithOptions(
+  solarText: string,
+  options: ParseContentBlockOptions = {},
+): ContentBlock[] {
   try {
     const cleaned = solarText.trim();
     const parsed = JSON.parse(cleaned);
     if (!isRecord(parsed) || !Array.isArray(parsed.content_blocks)) {
       throw new Error("content_blocks must be an array");
     }
-    return validateContentBlocks(parsed.content_blocks);
+    return validateContentBlocks(parsed.content_blocks, options);
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e);
     throw new Error(`INVALID_CONTENT_BLOCKS: ${detail}`);
   }
 }
 
-function validateContentBlocks(blocks: unknown[]): ContentBlock[] {
+function validateContentBlocks(
+  blocks: unknown[],
+  options: ParseContentBlockOptions,
+): ContentBlock[] {
+  let academyCardCount = 0;
+
   return blocks.map((block, index) => {
     if (!isRecord(block) || typeof block.type !== "string") {
       throw new Error(`block ${index} missing type`);
@@ -150,8 +269,11 @@ function validateContentBlocks(blocks: unknown[]): ContentBlock[] {
     }
 
     if (block.type === "academy_cards") {
-      if (!Array.isArray(block.items) || block.items.length > 3) {
-        throw new Error(`academy_cards block ${index} must have 1-3 items`);
+      const maxCards = options.maxAcademyCards ?? MAX_ACADEMY_CARDS_PER_TURN;
+      if (!Array.isArray(block.items) || block.items.length > maxCards) {
+        throw new Error(
+          `academy_cards block ${index} must have 0-${maxCards} items`,
+        );
       }
       const items = block.items.map((item, itemIndex) => {
         if (!isRecord(item)) {
@@ -173,6 +295,18 @@ function validateContentBlocks(blocks: unknown[]): ContentBlock[] {
             `academy card ${index}.${itemIndex} has invalid schema`,
           );
         }
+        if (
+          options.allowedAcademyIds &&
+          !options.allowedAcademyIds.has(item.id)
+        ) {
+          throw new Error(
+            `academy card ${index}.${itemIndex} references unknown academy`,
+          );
+        }
+        academyCardCount += 1;
+        if (academyCardCount > maxCards) {
+          throw new Error(`academy_cards exceed limit ${maxCards}`);
+        }
         return {
           id: item.id,
           name: item.name,
@@ -193,7 +327,8 @@ function validateContentBlocks(blocks: unknown[]): ContentBlock[] {
         if (
           !isRecord(item) ||
           typeof item.label !== "string" ||
-          typeof item.payload !== "string"
+          typeof item.payload !== "string" ||
+          !isValidQuickReplyPayload(item.payload)
         ) {
           throw new Error(
             `quick reply ${index}.${itemIndex} has invalid schema`,
@@ -208,8 +343,56 @@ function validateContentBlocks(blocks: unknown[]): ContentBlock[] {
   });
 }
 
+export function countAcademyCards(blocks: ContentBlock[]): number {
+  return blocks.reduce((sum, block) => {
+    if (block.type !== "academy_cards") return sum;
+    return sum + block.items.length;
+  }, 0);
+}
+
+export function collectAcademyCardIdsFromRows(
+  rows: { content_blocks: unknown }[],
+): Set<string> {
+  const ids = new Set<string>();
+  for (const row of rows) {
+    if (!Array.isArray(row.content_blocks)) continue;
+    for (const block of row.content_blocks) {
+      if (!isRecord(block) || block.type !== "academy_cards") continue;
+      if (!Array.isArray(block.items)) continue;
+      for (const item of block.items) {
+        if (isRecord(item) && typeof item.id === "string") ids.add(item.id);
+      }
+    }
+  }
+  return ids;
+}
+
+export function createNoMatchBlocks(): ContentBlock[] {
+  return [
+    {
+      type: "text",
+      text:
+        "조건에 딱 맞는 학원을 찾지 못했어요.\n조건을 조금 넓히면 다시 추천해드릴 수 있어요.",
+    },
+    {
+      type: "quick_replies",
+      items: [
+        { label: "지역 넓히기", payload: "relax:region" },
+        { label: "가격대 넓히기", payload: "relax:price" },
+        { label: "과목만 유지", payload: "relax:subject_only" },
+      ],
+    },
+  ];
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isValidQuickReplyPayload(payload: string): boolean {
+  return payload.startsWith("filter:") ||
+    payload.startsWith("relax:") ||
+    payload.startsWith("action:");
 }
 
 // ─── Academy DB Query ─────────────────────────────────────────────

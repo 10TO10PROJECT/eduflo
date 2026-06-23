@@ -9,14 +9,16 @@ import {
   BOOTSTRAP_PROMPT,
   calcCostKrw,
   callSolar,
+  createNoMatchBlocks,
   extractQueryArgs,
-  parseContentBlocks,
+  parseContentBlocksWithOptions,
   queryAcademies,
   SOLAR_MODEL,
   SolarMessage,
 } from "../_shared/solar.ts";
 
 const DAILY_BUDGET_CAP_KRW = 2000;
+const SESSION_CREATE_RATE_LIMIT_PER_MINUTE = 5;
 
 const handler = async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") {
@@ -36,8 +38,23 @@ const handler = async (req: Request): Promise<Response> => {
 
     // Body 파싱
     const { profile_tags } = await req.json();
-    if (!Array.isArray(profile_tags) || profile_tags.length === 0) {
+    if (!isValidProfileTags(profile_tags)) {
       return errResp(400, "profile_tags required");
+    }
+    const profileTags = profile_tags.map((tag: string) => tag.trim());
+
+    const oneMinuteAgo = new Date(Date.now() - 60_000).toISOString();
+    const { data: recentSessions, error: recentErr } = await supa
+      .from("chat_sessions")
+      .select("id")
+      .eq("user_id", user.id)
+      .gte("created_at", oneMinuteAgo);
+    if (recentErr) {
+      console.error("recent chat_sessions query error:", recentErr.message);
+      return errResp(500, "Failed to check rate limit");
+    }
+    if ((recentSessions ?? []).length >= SESSION_CREATE_RATE_LIMIT_PER_MINUTE) {
+      return errResp(429, "RATE_LIMIT");
     }
 
     // 일일 예산 체크
@@ -66,7 +83,7 @@ const handler = async (req: Request): Promise<Response> => {
       .insert({
         user_id: user.id,
         role,
-        profile_tags,
+        profile_tags: profileTags,
         surface: "preference_result",
       })
       .select()
@@ -77,38 +94,55 @@ const handler = async (req: Request): Promise<Response> => {
     }
 
     // 학원 DB 조회
-    const queryArgs = extractQueryArgs(profile_tags as string[]);
+    const queryArgs = extractQueryArgs(profileTags);
     const academies = await queryAcademies(supa, queryArgs);
 
-    // Solar 호출
-    const messages: SolarMessage[] = [
-      { role: "system", content: BOOTSTRAP_PROMPT },
-      {
-        role: "user",
-        content: `사용자 학습 선호도 태그: ${
-          (profile_tags as string[]).join(", ")
-        }
+    let content_blocks = createNoMatchBlocks();
+    let model_meta = {
+      provider: "upstage" as const,
+      model: SOLAR_MODEL,
+      latency_ms: 0,
+      tokens: { input: 0, output: 0 },
+      cost_krw: 0,
+    };
+
+    if (academies.length > 0) {
+      const allowedAcademyIds = new Set(
+        academies.map((academy: any) => String(academy.id)),
+      );
+
+      // Solar 호출
+      const messages: SolarMessage[] = [
+        { role: "system", content: BOOTSTRAP_PROMPT },
+        {
+          role: "user",
+          content: `사용자 학습 선호도 태그: ${profileTags.join(", ")}
 
 추천 가능한 학원 목록 (이 목록에서만 선택):
 ${academyListToContext(academies)}
 
 위 정보를 바탕으로 맞춤 추천 메시지를 content_blocks JSON으로 작성해주세요.`,
-      },
-    ];
+        },
+      ];
 
-    const t0 = Date.now();
-    const solarRes = await callSolar(messages);
-    const latencyMs = Date.now() - t0;
+      const t0 = Date.now();
+      const solarRes = await callSolar(messages, {
+        promptCacheKey: `chat-session:${session.id}`,
+      });
+      const latencyMs = Date.now() - t0;
 
-    const content_blocks = parseContentBlocks(solarRes.text);
-    const cost = calcCostKrw(solarRes.usage.input, solarRes.usage.output);
-    const model_meta = {
-      provider: "upstage",
-      model: SOLAR_MODEL,
-      latency_ms: latencyMs,
-      tokens: solarRes.usage,
-      cost_krw: cost,
-    };
+      content_blocks = parseContentBlocksWithOptions(solarRes.text, {
+        allowedAcademyIds,
+      });
+      const cost = calcCostKrw(solarRes.usage.input, solarRes.usage.output);
+      model_meta = {
+        provider: "upstage",
+        model: SOLAR_MODEL,
+        latency_ms: latencyMs,
+        tokens: solarRes.usage,
+        cost_krw: cost,
+      };
+    }
 
     // assistant turn 저장 + 세션 업데이트 (병렬)
     const [msgErr, sessUpdateErr] = await Promise.all([
@@ -121,7 +155,7 @@ ${academyListToContext(academies)}
       }).then((r) => r.error),
       supa.from("chat_sessions").update({
         turn_count: 1,
-        total_cost_krw: cost,
+        total_cost_krw: model_meta.cost_krw,
       }).eq("id", session.id).then((r) => r.error),
     ]);
 
@@ -136,7 +170,13 @@ ${academyListToContext(academies)}
 
     return ok({
       session_id: session.id,
-      first_turn: { content_blocks, model_meta },
+      first_turn: {
+        session_id: session.id,
+        turn_index: 1,
+        role: "assistant",
+        content_blocks,
+        model_meta,
+      },
       turns_remaining: 9,
     });
   } catch (e: unknown) {
@@ -150,6 +190,14 @@ ${academyListToContext(academies)}
     return errResp(500, msg);
   }
 };
+
+function isValidProfileTags(value: unknown): value is string[] {
+  return Array.isArray(value) &&
+    value.length > 0 &&
+    value.length <= 30 &&
+    value.every((tag) => typeof tag === "string" && tag.trim().length > 0 &&
+      tag.trim().length <= 100);
+}
 
 function ok(body: object): Response {
   return new Response(JSON.stringify(body), {
