@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { GraduationCap, UsersRound, Presentation } from "lucide-react";
+import Logo from "@/components/Logo";
 import { cn } from "@/lib/utils";
 
 type RoleChoice = "student" | "parent" | "admin";
@@ -61,6 +62,9 @@ const RoleSelection = () => {
         )}
       >
         <div className="mx-auto w-full max-w-md space-y-3 sm:space-y-4">
+          <div className="flex justify-center pb-4 sm:pb-6 animate-float">
+            <Logo size="lg" />
+          </div>
           <RoleCard
             icon={<GraduationCap className={iconClass} strokeWidth={2} aria-hidden />}
             title="학생으로 시작하기"
