@@ -63,7 +63,7 @@ const RoleSelection = () => {
       >
         <div className="mx-auto w-full max-w-md space-y-3 sm:space-y-4">
           <div className="flex justify-center pb-4 sm:pb-6 animate-float">
-            <Logo size="lg" />
+            <Logo size="lg" showText={false} />
           </div>
           <RoleCard
             icon={<GraduationCap className={iconClass} strokeWidth={2} aria-hidden />}
