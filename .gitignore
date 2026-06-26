@@ -24,6 +24,11 @@ dist-ssr
 *.sw?
 **firebase-adminsdk*.json
 
+# Local spec/design docs (not for repo)
+_specs/
+2026-06-11-preference-result-chatbot.html
+2026-06-12-beta-agent-handoff-master.html
+
 # Environment variables (never commit secrets)
 .env
 .env.local
