@@ -1,106 +1,200 @@
+import { useEffect, useMemo, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { ArrowLeft, MoreHorizontal, RefreshCw, Sparkles } from "lucide-react";
+import { toast } from "sonner";
 import { useRoutePrefix } from "@/hooks/useRoutePrefix";
+import { useAgentChatSession } from "@/hooks/useAgentChatSession";
+import { ProfileTagStrip } from "@/components/agent-chat/ProfileTagStrip";
+import { SessionWarnBanner } from "@/components/agent-chat/SessionWarnBanner";
+import { AgentChatMessageList } from "@/components/agent-chat/AgentChatMessage";
+import { AgentTypingIndicator } from "@/components/agent-chat/AgentTypingIndicator";
+import { AcademyCardsSkeleton } from "@/components/agent-chat/AcademyCardsSkeleton";
+import { AgentChatInput } from "@/components/agent-chat/AgentChatInput";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Sparkles, ArrowRight, Home, RefreshCw } from "lucide-react";
-import { getTagLabel, TAG_CATEGORIES, getTagCategory } from "@/lib/tagDictionary";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { MAX_RETRY_COUNT } from "@/hooks/useAgentChatSession";
+
+const DEFAULT_PROFILE_TAGS = [
+  "grade:mid_2",
+  "subject:math",
+  "subject:english",
+  "goal:advanced",
+  "budget:mid",
+];
 
 const PreferenceResult = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const prefix = useRoutePrefix();
-  const profileTags: string[] = location.state?.profileTags || [];
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Group tags by category for display
-  const tagsByCategory: Record<string, string[]> = {};
-  profileTags.forEach(tag => {
-    const category = getTagCategory(tag);
-    if (!tagsByCategory[category]) tagsByCategory[category] = [];
-    tagsByCategory[category].push(tag);
-  });
+  const profileTags = useMemo(() => {
+    const tags = location.state?.profileTags as string[] | undefined;
+    return tags?.length ? tags : DEFAULT_PROFILE_TAGS;
+  }, [location.state]);
+
+  const {
+    sessionId,
+    messages,
+    phase,
+    turnsRemaining,
+    showSessionWarn,
+    sessionCountdown,
+    inputDisabled,
+    inputPlaceholder,
+    consumedQuickReplyIds,
+    expandedCardIds,
+    retryCount,
+    rateLimitCountdown,
+    sendTurn,
+    sendQuickReply,
+    retryLastTurn,
+    resetSession,
+    toggleCardExpand,
+  } = useAgentChatSession(profileTags);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, phase]);
+
+  const handleBack = () => {
+    navigate(`${prefix}/home`);
+  };
+
+  const handleCardConsult = (academyId: string, academyName: string) => {
+    if (academyId.startsWith("mock-")) {
+      toast.info(`「${academyName}」 상담 신청은 백엔드 연동 후 이용할 수 있어요.`);
+      return;
+    }
+    toast.success(`「${academyName}」 상담 신청으로 이동합니다.`);
+  };
+
+  const handleCardViewDetail = (academyId: string) => {
+    if (academyId.startsWith("mock-")) {
+      toast.info("학원 상세 페이지는 실제 학원 ID 연동 후 열립니다.");
+      return;
+    }
+    navigate(`${prefix}/academy/${academyId}`, {
+      state: { from: "chat", session_id: sessionId },
+    });
+  };
+
+  const isLoading = phase === "loading";
+  const isTyping = phase === "typing";
+  const isSessionLimit = phase === "session_limit";
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-primary/10 via-background to-background">
-      {/* Hero Section */}
-      <div className="pt-12 pb-8 px-4 text-center">
-        <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg">
-          <Sparkles className="w-10 h-10 text-primary-foreground" />
-        </div>
-        <h1 className="text-2xl font-bold text-foreground mb-2">
-          맞춤 추천 준비 완료!
-        </h1>
-        <p className="text-muted-foreground">
-          선택하신 조건에 맞는 학원을 찾아드릴게요
-        </p>
-      </div>
-
-      {/* Selected Preferences Summary */}
-      <main className="max-w-lg mx-auto px-4 pb-8">
-        <Card className="shadow-card mb-6">
-          <CardContent className="p-6">
-            <h2 className="text-lg font-semibold mb-4">나의 학습 프로필</h2>
-            
-            <div className="space-y-4">
-              {Object.entries(tagsByCategory).map(([categoryKey, tags]) => {
-                const category = TAG_CATEGORIES[categoryKey];
-                if (!category) return null;
-                
-                return (
-                  <div key={categoryKey}>
-                    <p className="text-sm text-muted-foreground mb-2">
-                      {category.label}
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {tags.map(tag => (
-                        <Badge key={tag} variant="secondary" className="text-sm">
-                          {getTagLabel(tag)}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Action Buttons */}
-        <div className="space-y-3">
-          <Button 
-            onClick={() => navigate(`${prefix}/explore`)} 
-            className="w-full gap-2"
-            size="lg"
-          >
-            맞춤 학원 보러가기
-            <ArrowRight className="w-4 h-4" />
+    <div className="min-h-screen bg-muted flex flex-col max-w-lg mx-auto">
+      <header className="sticky top-0 z-40 bg-card border-b border-border shrink-0">
+        <div className="h-[52px] px-3.5 flex items-center gap-2.5">
+          <Button variant="ghost" size="icon" className="h-[30px] w-[30px] shrink-0" onClick={handleBack}>
+            <ArrowLeft className="w-5 h-5 text-muted-foreground" />
           </Button>
-          
-          <div className="grid grid-cols-2 gap-3">
-            <Button 
-              variant="outline" 
-              onClick={() => navigate(`${prefix}/home`)}
-              className="gap-2"
-            >
-              <Home className="w-4 h-4" />
-              홈으로
-            </Button>
-            <Button 
-              variant="outline" 
-              onClick={() => navigate(`${prefix}/preference-test`)}
-              className="gap-2"
+          <h1 className="flex-1 text-[15px] font-bold text-foreground">맞춤 추천</h1>
+          <div className="flex gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-[30px] w-[30px] text-muted-foreground"
+              onClick={resetSession}
+              title="새 추천 받기"
             >
               <RefreshCw className="w-4 h-4" />
-              다시 하기
             </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-[30px] w-[30px] text-muted-foreground">
+                  <MoreHorizontal className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() =>
+                    navigate(`${prefix}/preference-result`, {
+                      replace: true,
+                      state: {
+                        profileTags: [
+                          "grade:high_3",
+                          "subject:science",
+                          "class_size:small",
+                          "budget:low",
+                        ],
+                      },
+                    })
+                  }
+                >
+                  매칭 0건 테스트
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => sendTurn("에러테스트")}>
+                  응답 오류 테스트
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate(`${prefix}/preference-test`)}>
+                  선호도 테스트 다시하기
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate(`${prefix}/explore`)}>
+                  탐색으로 이동
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleBack}>홈으로</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
+      </header>
 
-        {/* Info Text */}
-        <p className="text-center text-sm text-muted-foreground mt-8">
-          프로필은 마이페이지에서 언제든 수정할 수 있어요
-        </p>
+      <ProfileTagStrip profileTags={profileTags} />
+
+      {showSessionWarn && (
+        <SessionWarnBanner countdown={sessionCountdown} turnsRemaining={turnsRemaining} />
+      )}
+
+      <main className="flex-1 overflow-y-auto px-3.5 py-3.5 bg-muted/90">
+        <div className="space-y-3">
+          {isLoading && (
+            <>
+              <AgentTypingIndicator />
+              <AcademyCardsSkeleton />
+            </>
+          )}
+
+          <AgentChatMessageList
+            messages={messages}
+            consumedQuickReplyIds={consumedQuickReplyIds}
+            expandedCardIds={expandedCardIds}
+            onQuickReplySelect={sendQuickReply}
+            onToggleCard={toggleCardExpand}
+            onCardConsult={handleCardConsult}
+            onCardViewDetail={handleCardViewDetail}
+            onRetry={retryLastTurn}
+            onReset={resetSession}
+            retryDisabled={isTyping}
+            retryCountdown={rateLimitCountdown}
+            maxRetriesReached={retryCount >= MAX_RETRY_COUNT}
+          />
+
+          {isTyping && <AgentTypingIndicator />}
+          <div ref={messagesEndRef} />
+        </div>
       </main>
+
+      {isSessionLimit && (
+        <div className="shrink-0 px-3.5 py-2 bg-card border-t border-border">
+          <Button className="w-full gap-2" onClick={resetSession}>
+            <Sparkles className="w-4 h-4" />
+            새 추천 받기
+          </Button>
+        </div>
+      )}
+
+      <AgentChatInput
+        placeholder={inputPlaceholder}
+        disabled={inputDisabled}
+        onSend={sendTurn}
+      />
     </div>
   );
 };

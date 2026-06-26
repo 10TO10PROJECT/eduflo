@@ -19,11 +19,6 @@ function shouldBlockCommunityPath(pathname: string): boolean {
   return pathname.includes("/community");
 }
 
-function shouldBlockPreferenceTestPath(pathname: string): boolean {
-  // 정식 출시 가림막으로 접근을 차단할 경로
-  return pathname === "/p/preference-test" || pathname === "/s/preference-test";
-}
-
 interface ReleaseNoticeGateProps {
   children: ReactNode;
 }
@@ -64,7 +59,7 @@ const ReleaseNoticeGate = ({ children }: ReleaseNoticeGateProps) => {
   const showBanner =
     hasSession === true &&
     !isSuperAdmin &&
-    (shouldBlockCommunityPath(pathname) || shouldBlockPreferenceTestPath(pathname));
+    shouldBlockCommunityPath(pathname);
 
   return (
     <>
