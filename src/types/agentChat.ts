@@ -34,12 +34,21 @@ export interface QuickRepliesBlock {
 
 export type ContentBlock = TextBlock | AcademyCardsBlock | QuickRepliesBlock;
 
+export interface ModelMeta {
+  provider: "upstage";
+  model: string;
+  latency_ms: number;
+  tokens: { input: number; output: number };
+  cost_krw: number;
+}
+
 export type AgentErrorCode =
   | "SOLAR_5XX"
   | "SOLAR_TIMEOUT"
   | "RATE_LIMIT"
   | "SESSION_EXPIRED"
-  | "BUDGET_EXCEEDED";
+  | "BUDGET_EXCEEDED"
+  | "AUTH_REQUIRED";
 
 export interface AgentMessage {
   id: string;

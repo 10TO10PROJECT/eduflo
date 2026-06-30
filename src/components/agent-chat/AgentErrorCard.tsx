@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import type { AgentErrorCode } from "@/types/agentChat";
-import { ERROR_MESSAGES } from "@/lib/agentChatMock";
+import { ERROR_MESSAGES } from "@/lib/agentChatErrors";
 
 interface AgentErrorCardProps {
   code: AgentErrorCode;
@@ -38,7 +38,7 @@ export function AgentErrorCard({
               : "다시 시도"}
           </Button>
         )}
-        {(maxRetriesReached || code === "SESSION_EXPIRED") && (
+        {(maxRetriesReached || code === "SESSION_EXPIRED" || code === "AUTH_REQUIRED") && (
           <Button
             size="sm"
             variant="secondary"
@@ -48,7 +48,7 @@ export function AgentErrorCard({
             처음으로
           </Button>
         )}
-        {!maxRetriesReached && code !== "SESSION_EXPIRED" && (
+        {!maxRetriesReached && code !== "SESSION_EXPIRED" && code !== "AUTH_REQUIRED" && (
           <Button
             size="sm"
             variant="secondary"

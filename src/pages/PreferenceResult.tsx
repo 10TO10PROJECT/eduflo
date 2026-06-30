@@ -67,18 +67,10 @@ const PreferenceResult = () => {
   };
 
   const handleCardConsult = (academyId: string, academyName: string) => {
-    if (academyId.startsWith("mock-")) {
-      toast.info(`「${academyName}」 상담 신청은 백엔드 연동 후 이용할 수 있어요.`);
-      return;
-    }
     toast.success(`「${academyName}」 상담 신청으로 이동합니다.`);
   };
 
   const handleCardViewDetail = (academyId: string) => {
-    if (academyId.startsWith("mock-")) {
-      toast.info("학원 상세 페이지는 실제 학원 ID 연동 후 열립니다.");
-      return;
-    }
     navigate(`${prefix}/academy/${academyId}`, {
       state: { from: "chat", session_id: sessionId },
     });
@@ -113,26 +105,6 @@ const PreferenceResult = () => {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onClick={() =>
-                    navigate(`${prefix}/preference-result`, {
-                      replace: true,
-                      state: {
-                        profileTags: [
-                          "grade:high_3",
-                          "subject:science",
-                          "class_size:small",
-                          "budget:low",
-                        ],
-                      },
-                    })
-                  }
-                >
-                  매칭 0건 테스트
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => sendTurn("에러테스트")}>
-                  응답 오류 테스트
-                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => navigate(`${prefix}/preference-test`)}>
                   선호도 테스트 다시하기
                 </DropdownMenuItem>
