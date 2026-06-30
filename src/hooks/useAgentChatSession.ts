@@ -1,19 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import type { AgentErrorCode, AgentMessage, AgentPhase } from "@/types/agentChat";
 import { MAX_USER_TURNS, WARN_TURNS_REMAINING } from "@/types/agentChat";
 import {
-  createMockSessionId,
-  generateErrorTurn,
-  generateFirstTurn,
-  generateFollowUpTurn,
-  generateSessionLimitTurn,
+  AgentChatApiError,
+  buildAssistantMessage,
+  buildErrorMessage,
+  createChatSession,
   nextMessageId,
-  resetMockMessageIds,
-} from "@/lib/agentChatMock";
+  resetMessageIds,
+  sendChatMessage,
+} from "@/lib/agentChatApi";
+import { supabase } from "@/integrations/supabase/client";
 
-const TYPING_DELAY_MS = 1200;
-const INITIAL_LOADING_MS = 1800;
 const MAX_RETRY_COUNT = 2;
+const RATE_LIMIT_COOLDOWN_SEC = 30;
 
 export { MAX_RETRY_COUNT };
 
@@ -44,7 +46,8 @@ interface UseAgentChatSessionResult {
 }
 
 export function useAgentChatSession(profileTags: string[]): UseAgentChatSessionResult {
-  const [sessionId, setSessionId] = useState(createMockSessionId);
+  const navigate = useNavigate();
+  const [sessionId, setSessionId] = useState("");
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [phase, setPhase] = useState<AgentPhase>("loading");
   const [turnsRemaining, setTurnsRemaining] = useState(MAX_USER_TURNS);
@@ -58,28 +61,65 @@ export function useAgentChatSession(profileTags: string[]): UseAgentChatSessionR
   const [sessionCountdown, setSessionCountdown] = useState("02:00");
 
   const pendingRef = useRef<PendingRequest | null>(null);
-  const assistantTurnRef = useRef(1);
-  const simulateErrorRef = useRef(false);
+  const assistantTurnRef = useRef(0);
   const mountedRef = useRef(true);
-  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const requestGenRef = useRef(0);
 
-  const clearTimers = useCallback(() => {
-    timersRef.current.forEach(clearTimeout);
-    timersRef.current = [];
-  }, []);
+  const handleAuthRequired = useCallback(() => {
+    toast.error("로그인이 필요합니다");
+    const redirect = window.location.pathname + window.location.search;
+    navigate(`/auth?redirect=${encodeURIComponent(redirect)}`);
+  }, [navigate]);
 
-  const schedule = useCallback((fn: () => void, ms: number) => {
-    const id = setTimeout(() => {
-      if (mountedRef.current) fn();
-    }, ms);
-    timersRef.current.push(id);
-  }, []);
+  const applyApiError = useCallback(
+    (error: unknown, nextTurnIndex: number) => {
+      if (error instanceof AgentChatApiError) {
+        if (error.code === "AUTH_REQUIRED") {
+          handleAuthRequired();
+          return;
+        }
+        if (error.code === "SESSION_LIMIT") {
+          setPhase("session_limit");
+          setTurnsRemaining(0);
+          return;
+        }
+        if (error.code === "RATE_LIMIT") {
+          setRateLimitCountdown(RATE_LIMIT_COOLDOWN_SEC);
+        }
+        if (error.code === "BUDGET_EXCEEDED") {
+          setPhase("session_limit");
+        }
+        if (
+          error.code === "SOLAR_5XX" ||
+          error.code === "SOLAR_TIMEOUT" ||
+          error.code === "RATE_LIMIT" ||
+          error.code === "SESSION_EXPIRED" ||
+          error.code === "BUDGET_EXCEEDED"
+        ) {
+          const errorMessage = buildErrorMessage(
+            sessionId,
+            nextTurnIndex,
+            error.code as AgentErrorCode,
+          );
+          assistantTurnRef.current = nextTurnIndex;
+          setMessages((prev) => [...prev, errorMessage]);
+          setPhase("active");
+          return;
+        }
+      }
 
-  const bootstrapSession = useCallback(() => {
-    clearTimers();
-    resetMockMessageIds();
-    const newSessionId = createMockSessionId();
-    setSessionId(newSessionId);
+      toast.error("AI 응답을 불러오지 못했어요. 잠시 후 다시 시도해주세요.");
+      setPhase("active");
+    },
+    [handleAuthRequired, sessionId],
+  );
+
+  const bootstrapSession = useCallback(async () => {
+    requestGenRef.current += 1;
+    const generation = requestGenRef.current;
+
+    resetMessageIds();
+    setSessionId("");
     setMessages([]);
     setPhase("loading");
     setTurnsRemaining(MAX_USER_TURNS);
@@ -90,26 +130,71 @@ export function useAgentChatSession(profileTags: string[]): UseAgentChatSessionR
     setRateLimitCountdown(null);
     setSessionCountdown("02:00");
     pendingRef.current = null;
-    assistantTurnRef.current = 1;
-    simulateErrorRef.current = false;
+    assistantTurnRef.current = 0;
 
-    schedule(() => {
-      const first = generateFirstTurn(profileTags, newSessionId);
-      assistantTurnRef.current = 1;
-      setMessages([first.message]);
-      setTurnsRemaining(first.turns_remaining);
+    const { data: authData } = await supabase.auth.getSession();
+    if (!mountedRef.current || generation !== requestGenRef.current) return;
+
+    if (!authData.session) {
+      handleAuthRequired();
       setPhase("active");
-    }, INITIAL_LOADING_MS);
-  }, [clearTimers, profileTags, schedule]);
+      return;
+    }
+
+    try {
+      const result = await createChatSession(profileTags);
+      if (!mountedRef.current || generation !== requestGenRef.current) return;
+
+      setSessionId(result.session_id);
+      assistantTurnRef.current = result.first_turn.turn_index;
+      setMessages([
+        buildAssistantMessage(result.first_turn, result.session_id),
+      ]);
+      setTurnsRemaining(result.turns_remaining);
+      setPhase("active");
+    } catch (error) {
+      if (!mountedRef.current || generation !== requestGenRef.current) return;
+
+      if (error instanceof AgentChatApiError) {
+        if (error.code === "AUTH_REQUIRED") {
+          handleAuthRequired();
+          setPhase("active");
+          return;
+        }
+        if (error.code === "BUDGET_EXCEEDED") {
+          setPhase("session_limit");
+          setMessages([buildErrorMessage("", 1, "BUDGET_EXCEEDED")]);
+          return;
+        }
+        if (error.code === "RATE_LIMIT") {
+          setRateLimitCountdown(RATE_LIMIT_COOLDOWN_SEC);
+          setMessages([buildErrorMessage("", 1, "RATE_LIMIT")]);
+          setPhase("active");
+          return;
+        }
+        if (
+          error.code === "SOLAR_5XX" ||
+          error.code === "SOLAR_TIMEOUT" ||
+          error.code === "SESSION_EXPIRED"
+        ) {
+          setMessages([buildErrorMessage("", 1, error.code)]);
+          setPhase("active");
+          return;
+        }
+      }
+
+      toast.error("AI 추천을 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
+      setPhase("active");
+    }
+  }, [applyApiError, handleAuthRequired, profileTags]);
 
   useEffect(() => {
     mountedRef.current = true;
     bootstrapSession();
     return () => {
       mountedRef.current = false;
-      clearTimers();
     };
-  }, [bootstrapSession, clearTimers]);
+  }, [bootstrapSession]);
 
   useEffect(() => {
     if (!showSessionWarnValue(turnsRemaining, userTurnCount)) return;
@@ -144,53 +229,48 @@ export function useAgentChatSession(profileTags: string[]): UseAgentChatSessionR
   }, [rateLimitCountdown]);
 
   const processAssistantResponse = useCallback(
-    (request: PendingRequest) => {
-      const nextTurnIndex = assistantTurnRef.current + 1;
+    async (request: PendingRequest) => {
+      const nextTurnIndex = assistantTurnRef.current + (request.isRetry ? 1 : 2);
+      const generation = requestGenRef.current;
 
-      if (simulateErrorRef.current && !request.isRetry) {
-        simulateErrorRef.current = false;
-        const errorTurn = generateErrorTurn(sessionId, nextTurnIndex, "SOLAR_TIMEOUT");
-        assistantTurnRef.current = nextTurnIndex;
-        setMessages((prev) => [...prev, errorTurn.message]);
+      if (!sessionId) {
         setPhase("active");
-        pendingRef.current = request;
         return;
       }
 
-      if (turnsRemaining <= 0) {
-        const limitTurn = generateSessionLimitTurn(sessionId, nextTurnIndex);
-        assistantTurnRef.current = nextTurnIndex;
-        setMessages((prev) => [...prev, limitTurn.message]);
-        setPhase("session_limit");
-        return;
+      try {
+        const response = await sendChatMessage(
+          sessionId,
+          request.userText,
+          request.payload,
+        );
+        if (!mountedRef.current || generation !== requestGenRef.current) return;
+
+        assistantTurnRef.current = response.turn_index;
+        setMessages((prev) => [
+          ...prev,
+          buildAssistantMessage(response, sessionId),
+        ]);
+        setTurnsRemaining(response.next_actions.turns_remaining);
+
+        if (!request.isRetry) {
+          setUserTurnCount((c) => c + 1);
+        }
+
+        if (!response.next_actions.can_continue) {
+          setPhase("session_limit");
+        } else {
+          setPhase("active");
+        }
+
+        pendingRef.current = null;
+        setRetryCount(0);
+      } catch (error) {
+        if (!mountedRef.current || generation !== requestGenRef.current) return;
+        applyApiError(error, nextTurnIndex);
       }
-
-      const response = generateFollowUpTurn(
-        request.userText,
-        request.payload,
-        sessionId,
-        nextTurnIndex,
-        turnsRemaining,
-      );
-
-      assistantTurnRef.current = nextTurnIndex;
-      setMessages((prev) => [...prev, response.message]);
-      setTurnsRemaining(response.turns_remaining);
-
-      if (!request.isRetry) {
-        setUserTurnCount((c) => c + 1);
-      }
-
-      if (!response.can_continue) {
-        setPhase("session_limit");
-      } else {
-        setPhase("active");
-      }
-
-      pendingRef.current = null;
-      setRetryCount(0);
     },
-    [sessionId, turnsRemaining],
+    [applyApiError, sessionId],
   );
 
   const sendTurn = useCallback(
@@ -202,9 +282,8 @@ export function useAgentChatSession(profileTags: string[]): UseAgentChatSessionR
 
       if (turnsRemaining <= 0) return;
 
-      if (trimmed.includes("에러테스트")) {
-        simulateErrorRef.current = true;
-      }
+      const request: PendingRequest = { userText: trimmed, payload, isRetry: false };
+      pendingRef.current = request;
 
       const userMessage: AgentMessage = {
         id: nextMessageId(),
@@ -212,15 +291,11 @@ export function useAgentChatSession(profileTags: string[]): UseAgentChatSessionR
         content_blocks: [{ type: "text", text: trimmed }],
       };
 
-      const request: PendingRequest = { userText: trimmed, payload, isRetry: false };
-      pendingRef.current = request;
-
       setMessages((prev) => [...prev, userMessage]);
       setPhase("typing");
-
-      schedule(() => processAssistantResponse(request), TYPING_DELAY_MS);
+      void processAssistantResponse(request);
     },
-    [phase, turnsRemaining, schedule, processAssistantResponse],
+    [phase, turnsRemaining, processAssistantResponse],
   );
 
   const sendQuickReply = useCallback(
@@ -244,14 +319,11 @@ export function useAgentChatSession(profileTags: string[]): UseAgentChatSessionR
       return prev.filter((_, i) => i !== lastErrorIdx);
     });
 
-    schedule(
-      () => processAssistantResponse({ ...pending, isRetry: true }),
-      TYPING_DELAY_MS,
-    );
-  }, [retryCount, schedule, processAssistantResponse]);
+    void processAssistantResponse({ ...pending, isRetry: true });
+  }, [retryCount, processAssistantResponse]);
 
   const resetSession = useCallback(() => {
-    bootstrapSession();
+    void bootstrapSession();
   }, [bootstrapSession]);
 
   const toggleCardExpand = useCallback((cardId: string) => {
